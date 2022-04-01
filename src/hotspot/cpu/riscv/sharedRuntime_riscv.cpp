@@ -1678,11 +1678,14 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
     __ mv(oop_handle_reg, c_rarg1);
 
     // Get address of the box
-
     __ la(lock_reg, Address(sp, lock_slot_offset * VMRegImpl::stack_slot_size));
 
     // Load the oop from the handle
     __ ld(obj_reg, Address(oop_handle_reg, 0));
+
+    if (UseBiasedLocking) {
+      __ biased_locking_enter(lock_reg, obj_reg, swap_reg, tmp, false, lock_done, &slow_path_lock);
+    }
 
     // Load (object->mark() | 1) into swap_reg % x10
     __ ld(t0, Address(obj_reg, oopDesc::mark_offset_in_bytes()));
@@ -1814,11 +1817,15 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
 
     Label done;
 
+    if (UseBiasedLocking) {
+      __ biased_locking_exit(obj_reg, old_hdr, done);
+    }
+
     // Simple recursive lock?
     __ ld(t0, Address(sp, lock_slot_offset * VMRegImpl::stack_slot_size));
     __ beqz(t0, done);
 
-    // Must save x10 if if it is live now because cmpxchg must use it
+    // Must save x10 if it is live now because cmpxchg must use it
     if (ret_type != T_FLOAT && ret_type != T_DOUBLE && ret_type != T_VOID) {
       save_native_result(masm, ret_type, stack_slots);
     }
